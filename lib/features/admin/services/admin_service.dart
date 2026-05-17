@@ -187,7 +187,7 @@ class AdminService {
     }
   }
 
-  /// جلب إحصائيات الإدارة
+  /// جلب إحصائيات الإدارة من Firestore مع مؤشرات التقارير والتوصيات.
   static Future<AdminStats> getAdminStats() async {
     try {
       final doctors = await _firestore
@@ -195,33 +195,58 @@ class AdminService {
           .where('accountType', isEqualTo: 'doctor')
           .count()
           .get();
-
-      final pending = await _firestore
-          .collection('doctor_requests')
-          .where('status', isEqualTo: 'pending')
-          .count()
-          .get();
-
-      final approved = await _firestore
-          .collection('doctor_requests')
-          .where('status', isEqualTo: 'approved')
-          .count()
-          .get();
-
-      final rejected = await _firestore
-          .collection('doctor_requests')
-          .where('status', isEqualTo: 'rejected')
-          .count()
-          .get();
-
       final patients = await _firestore
           .collection('users')
           .where('accountType', isEqualTo: 'patient')
           .count()
           .get();
+      final pending = await _firestore
+          .collection('doctor_requests')
+          .where('status', isEqualTo: 'pending')
+          .count()
+          .get();
+      final approved = await _firestore
+          .collection('doctor_requests')
+          .where('status', isEqualTo: 'approved')
+          .count()
+          .get();
+      final rejected = await _firestore
+          .collection('doctor_requests')
+          .where('status', isEqualTo: 'rejected')
+          .count()
+          .get();
+      final appointments = await _firestore.collection('appointments').count().get();
+      final consultations = await _firestore.collection('consultations').count().get();
+      final healthAssessments = await _firestore.collectionGroup('health_assessments').count().get();
 
-      final appointments =
-      await _firestore.collection('appointments').count().get();
+      final doctorSnapshot = await _firestore
+          .collection('users')
+          .where('accountType', isEqualTo: 'doctor')
+          .get();
+      final specialtyUsage = <String, int>{};
+      var ratingSum = 0.0;
+      var ratedDoctors = 0;
+      for (final doc in doctorSnapshot.docs) {
+        final data = doc.data();
+        final specialty = (data['specialtyName'] ?? data['specialty'] ?? 'غير محدد').toString();
+        specialtyUsage[specialty] = (specialtyUsage[specialty] ?? 0) + 1;
+        final rating = (data['rating'] as num?)?.toDouble() ?? 0;
+        if (rating > 0) {
+          ratingSum += rating;
+          ratedDoctors++;
+        }
+      }
+
+      final appointmentsSnapshot = await _firestore.collection('appointments').limit(500).get();
+      final topDoctors = <String, int>{};
+      final topSpecialties = <String, int>{...specialtyUsage};
+      for (final doc in appointmentsSnapshot.docs) {
+        final data = doc.data();
+        final doctorName = (data['doctorName'] ?? data['doctorFullName'] ?? data['doctorId'] ?? 'غير محدد').toString();
+        final specialty = (data['specialtyName'] ?? data['specialty'] ?? '').toString();
+        topDoctors[doctorName] = (topDoctors[doctorName] ?? 0) + 1;
+        if (specialty.isNotEmpty) topSpecialties[specialty] = (topSpecialties[specialty] ?? 0) + 1;
+      }
 
       return AdminStats(
         totalDoctors: doctors.count ?? 0,
@@ -230,8 +255,11 @@ class AdminService {
         rejectedRequests: rejected.count ?? 0,
         totalPatients: patients.count ?? 0,
         totalAppointments: appointments.count ?? 0,
-        averageDoctorRating: 4.5,
-        totalConsultations: 0,
+        averageDoctorRating: ratedDoctors == 0 ? 0 : ratingSum / ratedDoctors,
+        totalConsultations: consultations.count ?? 0,
+        totalHealthAssessments: healthAssessments.count ?? 0,
+        topSpecialties: _topEntries(topSpecialties),
+        topDoctors: _topEntries(topDoctors),
       );
     } catch (e) {
       print('Error fetching stats: $e');
@@ -246,6 +274,11 @@ class AdminService {
         totalConsultations: 0,
       );
     }
+  }
+
+  static Map<String, int> _topEntries(Map<String, int> source, {int limit = 5}) {
+    final entries = source.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    return Map.fromEntries(entries.take(limit));
   }
 
   /// سجل الأنشطة

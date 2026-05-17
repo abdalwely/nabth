@@ -20,6 +20,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  static const Color _pageBackground = Color(0xFFF5F8FF);
+  static const Color _primary = Color(0xFF1565C0);
+  static const Color _primaryDark = Color(0xFF0D47A1);
+  static const Color _text = Color(0xFF101828);
+  static const Color _muted = Color(0xFF667085);
+  static const Color _cardBorder = Color(0xFFE6ECF5);
+
   String? userId;
   bool isLoading = true;
 
@@ -53,15 +60,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final data = doc.data()!;
     setState(() {
-      fullName = data['fullName'] ?? '';
-      phone = data['phone'] ?? '';
-      gender = data['gender'] ?? '';
+      fullName = (data['fullName'] ?? data['name'] ?? '').toString();
+      phone = (data['phone'] ?? data['phoneNumber'] ?? '').toString();
+      gender = (data['gender'] ?? '').toString();
       age = int.tryParse(data['age']?.toString() ?? '');
-      workPlace = data['workPlace'] ?? '';
-      profileImageUrl = data['photoURL'];
+      workPlace = (data['workPlace'] ?? data['clinicName'] ?? '').toString();
+      profileImageUrl = (data['photoURL'] ?? data['profileImage'] ?? '').toString();
       isDoctor = data['accountType'] == 'doctor';
       isLoading = false;
     });
+  }
+
+  Future<void> _openEditProfile() async {
+    if (userId == null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => EditProfileScreen(userId: userId!)),
+    );
+    if (mounted) _loadUserProfile();
   }
 
   Future<void> _logout() async {
@@ -87,8 +103,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       },
     );
 
-    if (await canLaunch(emailLaunchUri.toString())) {
-      await launch(emailLaunchUri.toString());
+    if (await canLaunchUrl(emailLaunchUri)) {
+      await launchUrl(emailLaunchUri);
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('لا يمكن فتح تطبيق البريد')),
@@ -100,147 +116,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     if (isLoading) {
       return const Scaffold(
+        backgroundColor: _pageBackground,
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final displayName = fullName.trim().isEmpty ? 'مستخدم نبض' : fullName.trim();
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              colorScheme.primaryContainer.withOpacity(0.35),
-              colorScheme.surface,
-              colorScheme.surface,
-            ],
-          ),
-        ),
-        child: SafeArea(
+      backgroundColor: _pageBackground,
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _loadUserProfile,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    IconButton.filledTonal(
-                      onPressed: () => Navigator.maybePop(context),
-                      icon: const Icon(Icons.arrow_back_rounded),
-                    ),
-                    const SizedBox(width: 8),
-                    Text('الملف الشخصي', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                    const Spacer(),
-                    IconButton.filled(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => EditProfileScreen(userId: userId!)),
-                        ).then((_) => _loadUserProfile());
-                      },
-                      icon: const Icon(Icons.edit_rounded),
-                    ),
-                  ],
-                ),
+                _buildHeaderBar(),
                 const SizedBox(height: 14),
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      children: [
-                        CircleAvatar(
-                          radius: 48,
-                          backgroundColor: colorScheme.primaryContainer,
-                          backgroundImage: profileImageUrl?.isNotEmpty == true
-                              ? NetworkImage(profileImageUrl!)
-                              : null,
-                          child: profileImageUrl?.isNotEmpty == true
-                              ? null
-                              : Icon(Icons.person_rounded, size: 42, color: colorScheme.primary),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          fullName,
-                          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(email, style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _statChip(context, Icons.phone_rounded, phone.isNotEmpty ? phone : 'غير محدد'),
-                            _statChip(context, Icons.person_outline_rounded, gender.isNotEmpty ? gender : 'غير محدد'),
-                            _statChip(context, Icons.cake_outlined, age != null ? '$age سنة' : 'غير محدد'),
-                            if (isDoctor) _statChip(context, Icons.work_outline_rounded, workPlace.isNotEmpty ? workPlace : 'غير محدد'),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                _buildProfileHero(displayName),
                 const SizedBox(height: 14),
-                Text('الخدمات', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 8),
-                _modernOptionTile(
-                  context,
-                  icon: Icons.calendar_month_rounded,
-                  title: 'سجل المواعيد',
-                  subtitle: 'جميع المواعيد الحالية والسابقة',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const AppointmentsListScreen()),
-                  ),
+                _buildInfoSummary(),
+                const SizedBox(height: 18),
+                const Text(
+                  'الخدمات',
+                  style: TextStyle(color: _text, fontSize: 18, fontWeight: FontWeight.w900),
                 ),
-                if (isDoctor && userId != null)
-                  _modernOptionTile(
-                    context,
-                    icon: Icons.medication_rounded,
-                    title: 'إضافة دواء للمريض',
-                    subtitle: 'إنشاء وصفة دوائية جديدة وإرسالها للمريض',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => MedicationFormScreen(userId: userId!),
-                      ),
-                    ),
-                  ),
-                _modernOptionTile(
-                  context,
-                  icon: Icons.support_agent_rounded,
-                  title: 'الدعم الفني',
-                  subtitle: 'تواصل مباشر أو عبر البريد الإلكتروني',
-                  onTap: _openSupport,
-                  trailing: IconButton(
-                    onPressed: _launchSupportEmail,
-                    icon: const Icon(Icons.email_outlined),
-                  ),
-                ),
-                _modernOptionTile(
-                  context,
-                  icon: Icons.settings_rounded,
-                  title: 'الإعدادات',
-                  subtitle: 'الثيم، الإشعارات، والخيارات العامة',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const SettingsScreen()),
-                  ),
-                ),
-                _modernOptionTile(
-                  context,
-                  icon: Icons.logout_rounded,
-                  title: 'تسجيل الخروج',
-                  subtitle: 'إنهاء الجلسة الحالية بأمان',
-                  onTap: _logout,
-                  danger: true,
-                ),
+                const SizedBox(height: 10),
+                _buildServicesList(),
               ],
             ),
           ),
@@ -249,27 +154,303 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _statChip(BuildContext context, IconData icon, String text) {
-    final colorScheme = Theme.of(context).colorScheme;
+  Widget _buildHeaderBar() {
+    return Row(
+      children: [
+        IconButton(
+          onPressed: () => Navigator.maybePop(context),
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: _text,
+          ),
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+        const SizedBox(width: 8),
+        const Expanded(
+          child: Text(
+            'الملف الشخصي',
+            style: TextStyle(color: _text, fontSize: 22, fontWeight: FontWeight.w900),
+          ),
+        ),
+        FilledButton.icon(
+          onPressed: _openEditProfile,
+          icon: const Icon(Icons.edit_rounded, size: 18),
+          label: const Text('تعديل'),
+          style: FilledButton.styleFrom(
+            backgroundColor: _primary,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProfileHero(String displayName) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: colorScheme.primaryContainer.withOpacity(0.45),
+        gradient: const LinearGradient(
+          colors: [_primaryDark, _primary, Color(0xFF42A5F5)],
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: _primary.withOpacity(0.22),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      padding: const EdgeInsets.all(20),
+      child: Column(
         children: [
-          Icon(icon, size: 14, color: colorScheme.primary),
-          const SizedBox(width: 6),
-          Text(text, style: const TextStyle(fontSize: 12)),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withOpacity(0.85), width: 3),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withOpacity(0.18), blurRadius: 18, offset: const Offset(0, 8)),
+                  ],
+                ),
+                child: CircleAvatar(
+                  radius: 54,
+                  backgroundColor: Colors.white.withOpacity(0.18),
+                  backgroundImage: profileImageUrl?.isNotEmpty == true ? NetworkImage(profileImageUrl!) : null,
+                  child: profileImageUrl?.isNotEmpty == true
+                      ? null
+                      : Text(
+                          _initials(displayName),
+                          style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900),
+                        ),
+                ),
+              ),
+              Positioned(
+                bottom: -4,
+                right: -2,
+                child: Material(
+                  color: Colors.white,
+                  shape: const CircleBorder(),
+                  elevation: 4,
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: _openEditProfile,
+                    child: const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: Icon(Icons.camera_alt_rounded, color: _primary, size: 20),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            displayName,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            email.isEmpty ? 'لا يوجد بريد إلكتروني' : email,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white.withOpacity(0.88), fontSize: 14),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _heroBadge(isDoctor ? 'طبيب' : 'مريض', isDoctor ? Icons.local_hospital_rounded : Icons.favorite_rounded),
+              _heroBadge(phone.isNotEmpty ? phone : 'رقم غير مضاف', Icons.phone_rounded),
+              _heroBadge(age != null && age! > 0 ? '$age سنة' : 'العمر غير محدد', Icons.cake_rounded),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _modernOptionTile(
-    BuildContext context, {
+  Widget _buildInfoSummary() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _cardBorder),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.035), blurRadius: 16, offset: const Offset(0, 8)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _smallIcon(Icons.verified_user_rounded, _primary),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('بيانات الحساب', style: TextStyle(color: _text, fontSize: 17, fontWeight: FontWeight.w900)),
+              ),
+              TextButton.icon(
+                onPressed: _openEditProfile,
+                icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                label: const Text('تعديل الصورة'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: _infoCard(Icons.person_outline_rounded, 'الجنس', gender.isNotEmpty ? gender : 'غير محدد')),
+              const SizedBox(width: 10),
+              Expanded(child: _infoCard(Icons.badge_outlined, 'نوع الحساب', isDoctor ? 'طبيب' : 'مريض')),
+            ],
+          ),
+          if (isDoctor) ...[
+            const SizedBox(height: 10),
+            _wideInfoCard(Icons.business_center_outlined, 'مكان العمل', workPlace.isNotEmpty ? workPlace : 'غير محدد'),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServicesList() {
+    return Column(
+      children: [
+        _modernOptionTile(
+          icon: Icons.calendar_month_rounded,
+          title: 'سجل المواعيد',
+          subtitle: 'جميع المواعيد الحالية والسابقة',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AppointmentsListScreen()),
+          ),
+        ),
+        if (isDoctor && userId != null)
+          _modernOptionTile(
+            icon: Icons.medication_rounded,
+            title: 'إضافة دواء للمريض',
+            subtitle: 'إنشاء وصفة دوائية جديدة وإرسالها للمريض',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => MedicationFormScreen(userId: userId!)),
+            ),
+          ),
+        _modernOptionTile(
+          icon: Icons.support_agent_rounded,
+          title: 'الدعم الفني',
+          subtitle: 'تواصل مباشر أو عبر البريد الإلكتروني',
+          onTap: _openSupport,
+          trailing: IconButton(
+            onPressed: _launchSupportEmail,
+            icon: const Icon(Icons.email_outlined, color: _primary),
+          ),
+        ),
+        _modernOptionTile(
+          icon: Icons.settings_rounded,
+          title: 'الإعدادات',
+          subtitle: 'الثيم، الإشعارات، والخيارات العامة',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const SettingsScreen()),
+          ),
+        ),
+        _modernOptionTile(
+          icon: Icons.logout_rounded,
+          title: 'تسجيل الخروج',
+          subtitle: 'إنهاء الجلسة الحالية بأمان',
+          onTap: _logout,
+          danger: true,
+        ),
+      ],
+    );
+  }
+
+  Widget _heroBadge(String text, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.16),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 16),
+          const SizedBox(width: 6),
+          Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoCard(IconData icon, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _smallIcon(icon, _primary),
+          const SizedBox(height: 10),
+          Text(label, style: const TextStyle(color: _muted, fontSize: 12, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 3),
+          Text(value, style: const TextStyle(color: _text, fontWeight: FontWeight.w900)),
+        ],
+      ),
+    );
+  }
+
+  Widget _wideInfoCard(IconData icon, String label, String value) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _cardBorder),
+      ),
+      child: Row(
+        children: [
+          _smallIcon(icon, _primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(color: _muted, fontSize: 12, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 3),
+                Text(value, style: const TextStyle(color: _text, fontWeight: FontWeight.w900)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _smallIcon(IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(color: color.withOpacity(0.10), borderRadius: BorderRadius.circular(12)),
+      child: Icon(icon, color: color, size: 20),
+    );
+  }
+
+  Widget _modernOptionTile({
     required IconData icon,
     required String title,
     required String subtitle,
@@ -277,27 +458,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
     bool danger = false,
     Widget? trailing,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final iconColor = danger ? colorScheme.error : colorScheme.primary;
-    final bgColor = danger
-        ? colorScheme.errorContainer.withOpacity(0.4)
-        : colorScheme.primaryContainer.withOpacity(0.35);
+    final iconColor = danger ? const Color(0xFFE5484D) : _primary;
+    final bgColor = danger ? const Color(0xFFFFF1F2) : const Color(0xFFEFF6FF);
 
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _cardBorder),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 12, offset: const Offset(0, 6))],
+      ),
       child: ListTile(
         onTap: onTap,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(10)),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(14)),
           child: Icon(icon, color: iconColor),
         ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-        subtitle: Text(subtitle),
-        trailing: trailing ?? Icon(Icons.arrow_forward_ios_rounded, size: 16, color: colorScheme.onSurfaceVariant),
+        title: Text(title, style: TextStyle(color: danger ? iconColor : _text, fontWeight: FontWeight.w900)),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(subtitle, style: const TextStyle(color: _muted, fontSize: 12.5)),
+        ),
+        trailing: trailing ?? Icon(Icons.arrow_forward_ios_rounded, size: 16, color: danger ? iconColor : _muted),
       ),
     );
+  }
+
+  String _initials(String value) {
+    final parts = value.trim().split(RegExp(r'\s+')).where((part) => part.isNotEmpty).toList();
+    if (parts.isEmpty) return 'ن';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'.toUpperCase();
   }
 }

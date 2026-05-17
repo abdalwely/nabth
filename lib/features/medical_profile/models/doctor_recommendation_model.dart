@@ -12,6 +12,7 @@ class DoctorRecommendation {
   final bool isOnline;
   final String? photoURL;
   final String? licenseNumber;
+  final int yearsOfExperience;
   final int matchPercentage; // نسبة التطابق مع احتياجات المريض
   final List<String> reasonsForRecommendation; // أسباب التوصية
 
@@ -26,6 +27,7 @@ class DoctorRecommendation {
     required this.isOnline,
     this.photoURL,
     this.licenseNumber,
+    this.yearsOfExperience = 0,
     required this.matchPercentage,
     required this.reasonsForRecommendation,
   });
@@ -48,6 +50,7 @@ class DoctorRecommendation {
       isOnline: data['isOnline'] ?? false,
       photoURL: data['photoURL'],
       licenseNumber: data['licenseNumber'],
+      yearsOfExperience: int.tryParse((data['yearsOfExperience'] ?? data['experienceYears'] ?? '0').toString()) ?? 0,
       matchPercentage: matchPercentage,
       reasonsForRecommendation: reasons,
     );
@@ -66,6 +69,7 @@ class DoctorRecommendation {
       'isOnline': isOnline,
       'photoURL': photoURL,
       'licenseNumber': licenseNumber,
+      'yearsOfExperience': yearsOfExperience,
       'matchPercentage': matchPercentage,
       'reasonsForRecommendation': reasonsForRecommendation,
     };
@@ -75,7 +79,8 @@ class DoctorRecommendation {
   double get overallScore {
     // 60% التقييم + 40% عدد الاستشارات (معايرة)
     final consultationScore = (consultationCount / 100).clamp(0, 1) * 5;
-    return (rating * 0.6) + (consultationScore * 0.4);
+    final experienceScore = (yearsOfExperience / 15).clamp(0, 1) * 5;
+    return (rating * 0.55) + (consultationScore * 0.25) + (experienceScore * 0.20);
   }
 
   /// الحصول على نصاً وصفياً عن درجة التقييم
