@@ -15,6 +15,12 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  static const Color _adminBackground = Color(0xFFF6F8FC);
+  static const Color _cardColor = Colors.white;
+  static const Color _textColor = Color(0xFF101828);
+  static const Color _mutedTextColor = Color(0xFF667085);
+  static const Color _borderColor = Color(0xFFE6ECF5);
+
   late Future<AdminStats> _statsFuture;
   int _currentIndex = 0;
 
@@ -29,18 +35,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F7FF),
+      backgroundColor: _adminBackground,
       appBar: _buildAppBar(theme),
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        child: IndexedStack(
+      body: Theme(
+        data: theme.copyWith(
+          scaffoldBackgroundColor: _adminBackground,
+          cardColor: _cardColor,
+          iconTheme: const IconThemeData(color: _textColor),
+          textTheme: theme.textTheme.apply(bodyColor: _textColor, displayColor: _textColor),
+        ),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: IndexedStack(
           key: ValueKey(_currentIndex),
           index: _currentIndex,
           children: [
             _buildDashboardContent(theme),
             const DoctorRequestsScreen(),
             _buildSettingsContent(theme),
-          ],
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: _buildBottomBar(theme),
@@ -60,9 +74,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ),
       child: BottomNavigationBar(
         currentIndex: _currentIndex,
-        selectedItemColor: theme.primaryColor,
-        unselectedItemColor: Colors.grey.shade500,
-        backgroundColor: Colors.white,
+        selectedItemColor: const Color(0xFF1E4FBF),
+        unselectedItemColor: _mutedTextColor,
+        backgroundColor: _cardColor,
         type: BottomNavigationBarType.fixed,
         onTap: (index) => setState(() => _currentIndex = index),
         items: const [
@@ -91,7 +105,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       flexibleSpace: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [theme.primaryColor, const Color(0xFF1E4FBF)],
+            colors: const [Color(0xFF1E4FBF), Color(0xFF123A8C)],
             begin: Alignment.topRight,
             end: Alignment.bottomLeft,
           ),
@@ -203,7 +217,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.admin_panel_settings_rounded, color: Colors.white, size: 34),
+                child: const Icon(Icons.admin_panel_settings_rounded, color: _cardColor, size: 34),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -233,12 +247,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
             child: const Row(
               children: [
-                Icon(Icons.insights_rounded, color: Colors.white, size: 18),
+                Icon(Icons.insights_rounded, color: _cardColor, size: 18),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'تابع مؤشرات النظام وراجع الطلبات الجديدة بسرعة.',
-                    style: TextStyle(color: Colors.white, fontSize: 13),
+                    style: TextStyle(color: _cardColor, fontSize: 13),
                   ),
                 ),
               ],
@@ -275,7 +289,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: _cardColor,
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
@@ -301,12 +315,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 const SizedBox(height: 12),
                 Text(
                   item['value'] as String,
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _textColor),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   item['title'] as String,
-                  style: TextStyle(fontSize: 12.5, color: theme.textTheme.bodyMedium?.color?.withOpacity(0.75)),
+                  style: const TextStyle(fontSize: 12.5, color: _mutedTextColor, fontWeight: FontWeight.w600),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -339,18 +353,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     color: const Color(0xFFFFA62B),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 26),
+                  child: const Icon(Icons.warning_amber_rounded, color: _cardColor, size: 26),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('طلبات تحتاج مراجعة', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                      const Text('طلبات تحتاج مراجعة', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: _textColor)),
                       const SizedBox(height: 4),
                       Text(
                         'يوجد ${stats.pendingRequests} طلب بانتظار قرارك الآن',
-                        style: TextStyle(fontSize: 13.5, color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7)),
+                        style: const TextStyle(fontSize: 13.5, color: _mutedTextColor),
                       ),
                     ],
                   ),
@@ -392,7 +406,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _cardColor,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 16, offset: const Offset(0, 8))],
       ),
@@ -407,11 +421,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 child: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFF7B61FF)),
               ),
               const SizedBox(width: 12),
-              const Expanded(child: Text('تقارير PDF احترافية', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold))),
+              const Expanded(child: Text('تقارير PDF احترافية', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: _textColor))),
             ],
           ),
           const SizedBox(height: 8),
-          const Text('يشمل التقرير المرضى، الأطباء، الاستشارات، الحجوزات، التقييمات الصحية، وأكثر التخصصات والأطباء استخداماً.'),
+          const Text('يشمل التقرير المرضى، الأطباء، الاستشارات، الحجوزات، التقييمات الصحية، وأكثر التخصصات والأطباء استخداماً.', style: TextStyle(color: _mutedTextColor, height: 1.5)),
           const SizedBox(height: 12),
           ElevatedButton.icon(
             onPressed: () => _printReport(stats),
@@ -427,14 +441,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildModernCharts(AdminStats stats, ThemeData theme) {
     return Card(
       elevation: 0,
-      color: Colors.white,
+      color: _cardColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('رسوم بيانية مباشرة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('رسوم بيانية مباشرة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _textColor)),
             const SizedBox(height: 14),
             _buildHorizontalBars('أكثر التخصصات طلباً', stats.topSpecialties, const Color(0xFF3A86FF)),
             const SizedBox(height: 18),
@@ -452,10 +466,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w800, color: _textColor)),
         const SizedBox(height: 8),
         if (values.isEmpty)
-          Text('لا توجد بيانات كافية حالياً', style: TextStyle(color: Colors.grey[600]))
+          const Text('لا توجد بيانات كافية حالياً', style: TextStyle(color: _mutedTextColor))
         else
           ...values.entries.map((entry) {
             final factor = maxValue == 0 ? 0.0 : entry.value / maxValue;
@@ -463,7 +477,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               padding: const EdgeInsets.symmetric(vertical: 5),
               child: Row(
                 children: [
-                  SizedBox(width: 92, child: Text(entry.key, overflow: TextOverflow.ellipsis)),
+                  SizedBox(width: 92, child: Text(entry.key, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _mutedTextColor, fontWeight: FontWeight.w700))),
                   Expanded(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(99),
@@ -476,7 +490,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(entry.value.toString(), style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(entry.value.toString(), style: const TextStyle(fontWeight: FontWeight.bold, color: _textColor)),
                 ],
               ),
             );
@@ -493,7 +507,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Pie Chart لتوزيع النشاط', style: TextStyle(fontWeight: FontWeight.w700)),
+        const Text('Pie Chart لتوزيع النشاط', style: TextStyle(fontWeight: FontWeight.w800, color: _textColor)),
         const SizedBox(height: 10),
         Row(
           children: [
@@ -529,7 +543,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _legend(String label, Color color, int value) {
     return Chip(
       avatar: CircleAvatar(backgroundColor: color, radius: 5),
-      label: Text('$label: $value'),
+      label: Text('$label: $value', style: const TextStyle(color: _textColor, fontWeight: FontWeight.w600)),
       visualDensity: VisualDensity.compact,
     );
   }
@@ -543,14 +557,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     return Card(
       elevation: 0,
-      color: Colors.white,
+      color: _cardColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('إجراءات سريعة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('إجراءات سريعة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _textColor)),
             const SizedBox(height: 12),
             GridView.count(
               crossAxisCount: 3,
@@ -599,13 +613,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         const SizedBox(height: 8),
         Card(
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          color: _cardColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: const BorderSide(color: _borderColor)),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('معلومات الحساب', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const Text('معلومات الحساب', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _textColor)),
                 const SizedBox(height: 16),
                 _buildInfoRow('الاسم', widget.admin.fullName, theme),
                 _buildInfoRow('البريد الإلكتروني', widget.admin.email, theme),
@@ -636,7 +651,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F9FD),
+        color: const Color(0xFFF8FAFF),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -646,14 +661,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             flex: 1,
             child: Text(
               label,
-              style: TextStyle(fontWeight: FontWeight.w700, color: theme.disabledColor),
+              style: const TextStyle(fontWeight: FontWeight.w700, color: _mutedTextColor),
             ),
           ),
           Expanded(
             flex: 2,
             child: Text(
               value,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: const TextStyle(fontWeight: FontWeight.w700, color: _textColor),
             ),
           ),
         ],
@@ -677,6 +692,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void _showAdminProfile() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: _cardColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.only(topLeft: Radius.circular(22), topRight: Radius.circular(22)),
       ),
@@ -686,24 +702,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('ملف المسؤول', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const Text('ملف المسؤول', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _textColor)),
             const SizedBox(height: 10),
             ListTile(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              leading: const Icon(Icons.person_outline),
-              title: const Text('الملف الشخصي'),
+              leading: const Icon(Icons.person_outline, color: _mutedTextColor),
+              title: const Text('الملف الشخصي', style: TextStyle(color: _textColor, fontWeight: FontWeight.w700)),
               onTap: () => Navigator.pop(context),
             ),
             ListTile(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              leading: const Icon(Icons.security_outlined),
-              title: const Text('الأمان'),
+              leading: const Icon(Icons.security_outlined, color: _mutedTextColor),
+              title: const Text('الأمان', style: TextStyle(color: _textColor, fontWeight: FontWeight.w700)),
               onTap: () => Navigator.pop(context),
             ),
             ListTile(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              leading: const Icon(Icons.support_agent_outlined),
-              title: const Text('الدعم والمساعدة'),
+              leading: const Icon(Icons.support_agent_outlined, color: _mutedTextColor),
+              title: const Text('الدعم والمساعدة', style: TextStyle(color: _textColor, fontWeight: FontWeight.w700)),
               onTap: () => Navigator.pop(context),
             ),
           ],
