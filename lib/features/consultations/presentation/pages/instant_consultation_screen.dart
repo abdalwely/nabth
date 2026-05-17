@@ -50,15 +50,17 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
   @override
   Widget build(BuildContext context) {
     if (accountType == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(backgroundColor: Theme.of(context).scaffoldBackgroundColor, body: const Center(child: CircularProgressIndicator()));
     }
     final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
+    final colorScheme = theme.colorScheme;
     return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: isDarkMode ? MedicalTheme.darkGray800 : MedicalTheme.pure,
-        foregroundColor: isDarkMode ? MedicalTheme.lightGray100 : MedicalTheme.primaryMedicalBlue,
-        elevation: 2,
+        backgroundColor: theme.scaffoldBackgroundColor,
+        foregroundColor: colorScheme.primary,
+        elevation: 0,
+        centerTitle: true,
         title: const Text('الاستشارة الفورية'),
       ),
       body: accountType == 'doctor'
@@ -66,7 +68,7 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
           : _buildPatientConsultationsForUser(),
       floatingActionButton: FloatingActionButton(
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        backgroundColor: MedicalTheme.primaryMedicalBlue,
+        backgroundColor: colorScheme.primary,
         onPressed: (){
           Navigator.push(
             context,
@@ -76,7 +78,7 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
           );
         },
         tooltip: 'الاستشارة الجماعية',
-        child: const Icon(Icons.group),
+        child: Icon(Icons.group, color: colorScheme.onPrimary),
       ),
     );
   }
@@ -143,8 +145,13 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
   }
 
   Widget _buildDoctorCard(UserModel doctor) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     return Card(
+      color: theme.cardColor,
+      elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: theme.dividerColor.withOpacity(0.25))),
       child: ListTile(
         contentPadding: const EdgeInsets.all(12),
         leading: CircleAvatar(
@@ -153,9 +160,9 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
               ? NetworkImage(doctor.photoURL!)
               : const AssetImage('assets/images/doctor_placeholder.png') as ImageProvider,
         ),
-        title: Text(doctor.fullName, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(doctor.fullName, style: TextStyle(fontWeight: FontWeight.w900, color: colorScheme.onSurface)),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(doctor.specialtyName ?? 'تخصص عام'),
+          Text(doctor.specialtyName ?? 'تخصص عام', style: TextStyle(color: colorScheme.onSurfaceVariant)),
           const SizedBox(height: 4),
           Row(children: [
             const Icon(Icons.star, color: Colors.amber, size: 16),
@@ -165,7 +172,7 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
         ]),
         trailing: ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: MedicalTheme.primaryMedicalBlue,
+            backgroundColor: colorScheme.primary,
             foregroundColor: MedicalTheme.pure,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),

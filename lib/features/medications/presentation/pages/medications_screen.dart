@@ -116,16 +116,22 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     if (isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        body: const Center(child: CircularProgressIndicator()),
+      );
     }
 
     if (userId == null) {
-      return const Scaffold(body: Center(child: Text('الرجاء تسجيل الدخول.')));
+      return Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        body: const Center(child: Text('الرجاء تسجيل الدخول.')),
+      );
     }
-
-    final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
 
     Query medicationsQuery = FirebaseFirestore.instance.collection('medications');
     medicationsQuery = canAddMedications
@@ -133,32 +139,36 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
         : medicationsQuery.where('patientId', isEqualTo: userId);
 
     return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: isDarkMode ? Colors.grey[900] : Colors.white,
-        foregroundColor: Colors.blue,
-        elevation: 2,
-        title: Text(canAddMedications ? 'إدارة الأدوية (الطبيب)' : 'أدويتي'),
+        backgroundColor: theme.scaffoldBackgroundColor,
+        foregroundColor: colorScheme.primary,
+        elevation: 0,
         centerTitle: true,
+        title: Text(canAddMedications ? 'إدارة الأدوية' : 'أدويتي'),
         actions: [
           if (canAddMedications)
-            IconButton(
-              icon: const Icon(Icons.add),
-              onPressed: () async {
-                final updated = await Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => MedicationFormScreen(userId: userId!),
-                  ),
-                );
-                if (updated == true) setState(() {});
-              },
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 8),
+              child: IconButton.filledTonal(
+                icon: const Icon(Icons.add_rounded),
+                onPressed: () async {
+                  final updated = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(builder: (context) => MedicationFormScreen(userId: userId!)),
+                  );
+                  if (updated == true) setState(() {});
+                },
+              ),
             ),
         ],
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: medicationsQuery.snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError) return const Center(child: Text('حدث خطأ في تحميل البيانات'));
+          if (snapshot.hasError) {
+            return const Center(child: Text('حدث خطأ في تحميل البيانات'));
+          }
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -172,130 +182,195 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
           });
 
           if (docs.isEmpty) {
-            return Center(
-              child: Text(canAddMedications
-                  ? 'لا توجد أدوية مضافة بعد.'
-                  : 'لا توجد وصفات أدوية واردة من الطبيب حالياً.'),
+            return _buildEmptyState(
+              canAddMedications ? 'لا توجد أدوية مضافة بعد.' : 'لا توجد وصفات أدوية واردة من الطبيب حالياً.',
             );
           }
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: docs.map((doc) {
-              final data = doc.data() as Map<String, dynamic>;
-              final times = (data['times'] as List<dynamic>? ?? []).cast<String>();
-              final status = (data['status'] ?? 'pending').toString();
-              final createdAt = data['createdAt'] as Timestamp?;
+          return RefreshIndicator(
+            onRefresh: () async => setState(() {}),
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              itemCount: docs.length + 1,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                if (index == 0) return _buildHeaderCard(docs.length);
 
-              return Card(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: 4,
-                child: ExpansionTile(
-                  title: Text(
-                    data['name'] ?? '',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('${data['dose'] ?? ''} • ${data['schedule'] ?? ''}'),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: _statusColor(status).withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          _statusText(status),
-                          style: TextStyle(
-                            color: _statusColor(status),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.redAccent),
-                    onPressed: () => _deleteMedication(doc.id),
-                  ),
-                  childrenPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('النوع: ${data['type'] ?? ''}'),
-                        Text('المدة: ${data['duration'] ?? ''}'),
-                        Text('ملاحظات: ${data['notes'] ?? ''}'),
-                        if (status == 'approved')
-                          Text('مدة العلاج: ${_formatRemainingDays(data)}',
-                              style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w700)),
-                        if (createdAt != null)
-                          Text('تم الإنشاء: ${DateFormat('yyyy/MM/dd hh:mm a').format(createdAt.toDate())}'),
-                        const SizedBox(height: 8),
-                        if (times.isNotEmpty)
-                          const Text('الأوقات اليومية:', style: TextStyle(fontWeight: FontWeight.bold)),
-                        Wrap(
-                          spacing: 8,
-                          children: times.map((t) => Chip(label: Text(t))).toList(),
-                        ),
-                        const SizedBox(height: 8),
-                        if (!canAddMedications && status == 'pending')
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => _approveMedication(doc.id),
-                                  icon: const Icon(Icons.check),
-                                  label: const Text('موافقة'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () => _rejectMedication(doc.id),
-                                  icon: const Icon(Icons.close),
-                                  label: const Text('رفض'),
-                                  style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                    if (canAddMedications)
-                      ButtonBar(
-                        alignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () async {
-                              final updated = await Navigator.push<bool>(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      MedicationFormScreen(userId: userId!, doc: doc),
-                                ),
-                              );
-                              if (updated == true) setState(() {});
-                            },
-                            child: const Text('تعديل'),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-              );
-            }).toList(),
+                final doc = docs[index - 1];
+                final data = doc.data() as Map<String, dynamic>;
+                final times = (data['times'] as List<dynamic>? ?? []).cast<String>();
+                final status = (data['status'] ?? 'pending').toString();
+                final createdAt = data['createdAt'] as Timestamp?;
+                return _buildMedicationCard(doc, data, times, status, createdAt);
+              },
+            ),
           );
         },
       ),
     );
   }
+
+  Widget _buildHeaderCard(int count) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [colorScheme.primary, colorScheme.primary.withOpacity(0.75)]),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: colorScheme.primary.withOpacity(0.18), blurRadius: 18, offset: const Offset(0, 8))],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: colorScheme.onPrimary.withOpacity(0.18),
+            child: Icon(Icons.medication_liquid_rounded, color: colorScheme.onPrimary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(canAddMedications ? 'إدارة وصفات المرضى' : 'خطة أدويتك اليومية', style: TextStyle(color: colorScheme.onPrimary, fontSize: 18, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 4),
+                Text('$count عنصر مسجل', style: TextStyle(color: colorScheme.onPrimary.withOpacity(0.82))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMedicationCard(DocumentSnapshot doc, Map<String, dynamic> data, List<String> times, String status, Timestamp? createdAt) {
+    final docId = doc.id;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final statusColor = _statusColor(status);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: theme.dividerColor.withOpacity(0.25)),
+        boxShadow: [BoxShadow(color: theme.shadowColor.withOpacity(0.05), blurRadius: 14, offset: const Offset(0, 8))],
+      ),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: colorScheme.primaryContainer.withOpacity(0.45), borderRadius: BorderRadius.circular(16)),
+          child: Icon(Icons.medication_rounded, color: colorScheme.primary),
+        ),
+        title: Text(data['name'] ?? '', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: colorScheme.onSurface)),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              _miniChip('${data['dose'] ?? ''} • ${data['schedule'] ?? ''}', Icons.schedule_rounded, colorScheme.primary),
+              _statusChip(status, statusColor),
+            ],
+          ),
+        ),
+        trailing: IconButton(
+          icon: Icon(Icons.delete_outline_rounded, color: colorScheme.error),
+          onPressed: () => _deleteMedication(docId),
+        ),
+        children: [
+          _detailRow('النوع', data['type'] ?? ''),
+          _detailRow('المدة', data['duration'] ?? ''),
+          _detailRow('ملاحظات', data['notes'] ?? ''),
+          if (status == 'approved') _detailRow('مدة العلاج', _formatRemainingDays(data), valueColor: Colors.green),
+          if (createdAt != null) _detailRow('تم الإنشاء', DateFormat('yyyy/MM/dd hh:mm a').format(createdAt.toDate())),
+          const SizedBox(height: 8),
+          if (times.isNotEmpty) Text('الأوقات اليومية:', style: TextStyle(fontWeight: FontWeight.w900, color: colorScheme.onSurface)),
+          const SizedBox(height: 6),
+          Wrap(spacing: 8, runSpacing: 8, children: times.map((t) => Chip(label: Text(t))).toList()),
+          const SizedBox(height: 10),
+          if (!canAddMedications && status == 'pending')
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _approveMedication(docId),
+                    icon: const Icon(Icons.check),
+                    label: const Text('موافقة'),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _rejectMedication(docId),
+                    icon: const Icon(Icons.close),
+                    label: const Text('رفض'),
+                    style: OutlinedButton.styleFrom(foregroundColor: colorScheme.error),
+                  ),
+                ),
+              ],
+            ),
+          if (canAddMedications)
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton.icon(
+                onPressed: () async {
+                  final updated = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(builder: (context) => MedicationFormScreen(userId: userId!, doc: doc)),
+                  );
+                  if (updated == true) setState(() {});
+                },
+                icon: const Icon(Icons.edit_rounded),
+                label: const Text('تعديل'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusChip(String status, Color statusColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(color: statusColor.withOpacity(0.12), borderRadius: BorderRadius.circular(99)),
+      child: Text(_statusText(status), style: TextStyle(color: statusColor, fontWeight: FontWeight.w800, fontSize: 12)),
+    );
+  }
+
+  Widget _miniChip(String text, IconData icon, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [Icon(icon, size: 14, color: color), const SizedBox(width: 4), Text(text, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12))],
+    );
+  }
+
+  Widget _detailRow(String label, Object value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 86, child: Text(label, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontWeight: FontWeight.w700))),
+          Expanded(child: Text(value.toString(), style: TextStyle(color: valueColor ?? Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w700))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(String message) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.medication_outlined, size: 72, color: colorScheme.primary.withOpacity(0.45)),
+          const SizedBox(height: 12),
+          Text(message, textAlign: TextAlign.center, style: TextStyle(color: colorScheme.onSurfaceVariant, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
 }
