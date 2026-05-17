@@ -287,7 +287,19 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: _currentIndex == 0 ? buildAppBar() : null,
-      body: IndexedStack(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              colorScheme.primaryContainer.withOpacity(theme.brightness == Brightness.dark ? 0.08 : 0.18),
+              theme.scaffoldBackgroundColor,
+              theme.scaffoldBackgroundColor,
+            ],
+          ),
+        ),
+        child: IndexedStack(
         index: _currentIndex,
         children: [
           RefreshIndicator(
@@ -321,6 +333,7 @@ class _HomeScreenState extends State<HomeScreen> {
               : const AppointmentsListScreen(),
           const ProfileScreen(),
         ],
+      ),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -391,7 +404,7 @@ class WelcomeMoodSection extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     return Container(
       margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -399,7 +412,7 @@ class WelcomeMoodSection extends StatelessWidget {
             colorScheme.primary.withOpacity(0.8),
           ],
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
               color: colorScheme.primary.withOpacity(0.2),
@@ -412,10 +425,10 @@ class WelcomeMoodSection extends StatelessWidget {
         children: [
           Text(
             userType == 'patient' ? "مرحباً، $userName" : "مرحباً، دكتور $userName",
-            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+            style: TextStyle(color: colorScheme.onPrimary, fontSize: 24, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 8),
-          const Text("كيف تشعر اليوم؟", style: TextStyle(color: Colors.white70, fontSize: 16)),
+          Text("كيف تشعر اليوم؟", style: TextStyle(color: colorScheme.onPrimary.withOpacity(0.82), fontSize: 16)),
           const SizedBox(height: 16),
           Row(
             children: [

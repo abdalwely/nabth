@@ -286,16 +286,18 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
         _selectedPayment != null;
     final theme = Theme.of(context);
     return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: theme.colorScheme.surface,
+        backgroundColor: theme.scaffoldBackgroundColor,
         foregroundColor: theme.colorScheme.primary,
-        elevation: 2,
+        elevation: 0,
+        centerTitle: true,
         title: const Text('حجز موعد جديد'),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         child: Column(
           children: [
             _buildDropdownCard(
@@ -454,7 +456,8 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
                 onPressed: isFormComplete ? _confirmBooking : null,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: Colors.blue,
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
                 ),
               ),
             ),
@@ -511,14 +514,18 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
   }
 
   Widget _buildDropdownCard({required String title, required List<Widget> children}) {
+    final theme = Theme.of(context);
     return Card(
+      elevation: 0,
+      color: theme.cardColor,
       margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22), side: BorderSide(color: theme.dividerColor.withOpacity(0.25))),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            Text(title, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: theme.colorScheme.onSurface)),
             const SizedBox(height: 12),
             ...children,
           ],
@@ -528,7 +535,11 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
   }
 
   Widget _buildDoctorDetails(Map<String, dynamic> doctor) {
+    final theme = Theme.of(context);
     return Card(
+      elevation: 0,
+      color: theme.cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22), side: BorderSide(color: theme.dividerColor.withOpacity(0.25))),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -545,9 +556,9 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(doctor['fullName'],
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: theme.colorScheme.onSurface)),
                   Text(doctor['specialtyName'] ?? '',
-                      style: const TextStyle(color: Colors.grey)),
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 4),
                   if (doctor['rating'] != null)
                     Row(
@@ -559,7 +570,7 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
                   if (doctor['specialty'] != null)
                     Text(
                       doctor['specialty'],
-                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                      style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -579,9 +590,9 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'أوقات الدوام:',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(fontWeight: FontWeight.w900, color: Theme.of(context).colorScheme.onSurface),
         ),
         const SizedBox(height: 8),
         ...workDays.entries.map((entry) {
