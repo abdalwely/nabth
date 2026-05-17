@@ -1,21 +1,18 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:digl/core/config/medical_theme.dart';
 import 'package:digl/core/config/theme_helper.dart';
-import 'package:digl/features/medical_profile/presentation/pages/ai_symptom_questions_screen.dart';
-import 'package:digl/features/medical_profile/models/health_profile_model.dart';
 import 'package:digl/features/medical_profile/models/doctor_recommendation_model.dart';
+import 'package:digl/features/medical_profile/models/health_profile_model.dart';
+import 'package:digl/features/medical_profile/presentation/pages/ai_symptom_questions_screen.dart';
 import 'package:digl/features/medical_profile/services/advanced_diagnosis_service.dart';
 import 'package:digl/features/medical_profile/services/doctor_matching_service.dart';
-import 'package:digl/features/medical_profile/services/patient_symptoms_service.dart';
+import 'package:digl/features/settings/models/symptom_keyword_analysis_model.dart';
+import 'package:digl/features/settings/services/symptom_keyword_analysis_service.dart';
 
-/// 🏥 صفحة تقييم الصحة - قسم متقدم في الإعدادات
-/// 
-/// تتضمن:
-/// - أسئلة الذكاء الاصطناعي عن حالة المريض
-/// - تحليل الأعراض وتشخيص أولي
-/// - اختيار الطبيب المناسب للحالة
+/// 🏥 صفحة تقييم الصحة الذكية.
+/// تجمع بين التقييم الحالي وقواعد كلمات مفتاحية قابلة للتوسعة لتوجيه المريض للتخصص المناسب.
 class HealthAssessmentScreen extends StatefulWidget {
   const HealthAssessmentScreen({Key? key}) : super(key: key);
 
@@ -28,14 +25,14 @@ class _HealthAssessmentScreenState extends State<HealthAssessmentScreen>
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // متغيرات الحالة
   bool _isLoading = false;
   bool _hasCompletedAssessment = false;
   late TabController _tabController;
 
-  // بيانات التحليل والنتائج
   MedicalAnalysisResult? _lastAnalysisResult;
+  SymptomKeywordAnalysisResult? _keywordAnalysisResult;
   List<DoctorRecommendation> _recommendedDoctors = [];
+  final Set<String> _selectedSymptoms = {};
 
   @override
   void initState() {
@@ -50,15 +47,43 @@ class _HealthAssessmentScreenState extends State<HealthAssessmentScreen>
     super.dispose();
   }
 
-  /// تحميل بيانات التقييم السابق
   Future<void> _loadAssessmentData() async {
     setState(() => _isLoading = true);
-
     try {
       final user = _auth.currentUser;
       if (user == null) return;
 
-      // جلب آخر نتائج التحليل
+      final assessmentSnapshot = await _firestore
+          .collection('patients')
+          .doc(user.uid)
+          .collection('health_assessments')
+          .orderBy('createdAt', descending: true)
+          .limit(1)
+          .get();
+
+      if (assessmentSnapshot.docs.isNotEmpty) {
+        final data = assessmentSnapshot.docs.first.data();
+        final ruleId = data['ruleId']?.toString();
+        final rule = SymptomKeywordAnalysisService.rules
+            .where((item) => item.id == ruleId)
+            .cast<SymptomKeywordRule?>()
+            .firstWhere((item) => item != null, orElse: () => null);
+        if (rule != null) {
+          _keywordAnalysisResult = SymptomKeywordAnalysisResult(
+            rule: rule,
+            score: data['score'] ?? 0,
+            selectedSymptoms: (data['selectedSymptoms'] as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
+            createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+          );
+          _selectedSymptoms.addAll(_keywordAnalysisResult!.selectedSymptoms);
+          _hasCompletedAssessment = true;
+          _recommendedDoctors = await DoctorMatchingService.findMatchingDoctors(
+            recommendedSpecialties: [_keywordAnalysisResult!.primarySpecialty],
+            symptoms: _keywordAnalysisResult!.selectedSymptoms,
+          );
+        }
+      }
+
       final analysisSnapshot = await _firestore
           .collection('patients')
           .doc(user.uid)
@@ -67,30 +92,28 @@ class _HealthAssessmentScreenState extends State<HealthAssessmentScreen>
           .limit(1)
           .get();
 
-      if (analysisSnapshot.docs.isNotEmpty) {
+      if (analysisSnapshot.docs.isNotEmpty && _keywordAnalysisResult == null) {
         final analysisData = analysisSnapshot.docs.first.data();
-
-        // إعادة بناء النتائج من Firestore
         final medicines = (analysisData['recommendedMedicines'] as List<dynamic>?)
-            ?.map((m) => MedicineRecommendation(
-          name: m['name'] ?? '',
-          activeIngredient: m['activeIngredient'] ?? '',
-          dose: m['dose'] ?? '',
-          category: m['category'] ?? '',
-          sideEffects: (m['sideEffects'] as List<dynamic>?)?.cast<String>() ?? [],
-          warnings: (m['warnings'] as List<dynamic>?)?.cast<String>() ?? [],
-          matchPercentage: m['matchPercentage'] ?? 0,
-        ))
-            .toList() ??
+                ?.map((m) => MedicineRecommendation(
+                      name: m['name'] ?? '',
+                      activeIngredient: m['activeIngredient'] ?? '',
+                      dose: m['dose'] ?? '',
+                      category: m['category'] ?? '',
+                      sideEffects: (m['sideEffects'] as List<dynamic>?)?.cast<String>() ?? [],
+                      warnings: (m['warnings'] as List<dynamic>?)?.cast<String>() ?? [],
+                      matchPercentage: m['matchPercentage'] ?? 0,
+                    ))
+                .toList() ??
             [];
 
         final specialties = (analysisData['recommendedSpecialties'] as List<dynamic>?)
-            ?.map((s) => SpecialtyRecommendation(
-          name: s['name'] ?? '',
-          description: s['description'] ?? '',
-          matchPercentage: s['matchPercentage'] ?? 0,
-        ))
-            .toList() ??
+                ?.map((s) => SpecialtyRecommendation(
+                      name: s['name'] ?? '',
+                      description: s['description'] ?? '',
+                      matchPercentage: s['matchPercentage'] ?? 0,
+                    ))
+                .toList() ??
             [];
 
         _lastAnalysisResult = MedicalAnalysisResult(
@@ -100,52 +123,84 @@ class _HealthAssessmentScreenState extends State<HealthAssessmentScreen>
           recommendedSpecialties: specialties,
           immediateActions: (analysisData['immediateActions'] as List<dynamic>?)?.cast<String>() ?? [],
           analysisDate: (analysisData['analysisDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
-          detailedAnalysis: analysisData['detailedAnalysis'] ?? '', recommendedDoctors: [],
+          detailedAnalysis: analysisData['detailedAnalysis'] ?? '',
+          recommendedDoctors: [],
         );
-
         _hasCompletedAssessment = true;
-
-        // جلب الأطباء الموصى بهم
-        if (_lastAnalysisResult != null) {
-          _recommendedDoctors = await DoctorMatchingService.findMatchingDoctors(
-            recommendedSpecialties: _lastAnalysisResult!.recommendedSpecialties,
-            symptoms: _lastAnalysisResult!.matchedSymptoms,
-          );
-        }
+        _recommendedDoctors = await DoctorMatchingService.findMatchingDoctors(
+          recommendedSpecialties: _lastAnalysisResult!.recommendedSpecialties,
+          symptoms: _lastAnalysisResult!.matchedSymptoms,
+        );
       }
     } catch (e) {
       print('❌ خطأ في تحميل بيانات التقييم: $e');
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  /// بدء اختبار جديد
   Future<void> _startNewAssessment() async {
     final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (context) => const AiSymptomQuestionsScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => const AiSymptomQuestionsScreen()),
     );
-
     if (result == true && mounted) {
       await _loadAssessmentData();
       ThemeHelper.showSuccessSnackBar(context, '✅ تم إكمال التقييم بنجاح');
-      _tabController.animateTo(1); // الذهاب لتبويب النتائج
+      _tabController.animateTo(1);
     }
   }
 
-  /// تحليل الأعراض الجديدة
-  Future<void> _analyzeSymptoms() async {
-    setState(() => _isLoading = true);
+  Future<void> _analyzeSelectedSymptoms() async {
+    if (_selectedSymptoms.isEmpty) {
+      ThemeHelper.showErrorSnackBar(context, 'اختر عرضاً واحداً على الأقل');
+      return;
+    }
 
+    setState(() => _isLoading = true);
     try {
       final user = _auth.currentUser;
       if (user == null) return;
 
-      // جلب آخر الأعراض المسجلة
+      final result = SymptomKeywordAnalysisService.analyze(_selectedSymptoms.toList());
+      if (result == null) {
+        ThemeHelper.showErrorSnackBar(context, 'لم يتم العثور على تخصص مناسب، جرّب التقييم التفصيلي');
+        return;
+      }
+
+      final doctors = await DoctorMatchingService.findMatchingDoctors(
+        recommendedSpecialties: [result.primarySpecialty],
+        symptoms: result.selectedSymptoms,
+        returnCount: 5,
+      );
+
+      await SymptomKeywordAnalysisService.saveResult(patientId: user.uid, result: result);
+      await DoctorMatchingService.saveDoctorRecommendation(user.uid, doctors);
+
+      setState(() {
+        _keywordAnalysisResult = result;
+        _lastAnalysisResult = null;
+        _recommendedDoctors = doctors;
+        _hasCompletedAssessment = true;
+      });
+
+      if (mounted) {
+        ThemeHelper.showSuccessSnackBar(context, '✅ تم تحليل الأعراض واقتراح الطبيب المناسب');
+        _tabController.animateTo(1);
+      }
+    } catch (e) {
+      print('❌ خطأ في تحليل الكلمات المفتاحية: $e');
+      if (mounted) ThemeHelper.showErrorSnackBar(context, 'حدث خطأ في التحليل');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _analyzeSymptoms() async {
+    setState(() => _isLoading = true);
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
       final symptomsSnapshot = await _firestore
           .collection('patients')
           .doc(user.uid)
@@ -155,30 +210,20 @@ class _HealthAssessmentScreenState extends State<HealthAssessmentScreen>
           .get();
 
       if (symptomsSnapshot.docs.isEmpty) {
-        if (mounted) {
-          ThemeHelper.showErrorSnackBar(context, 'لا توجد بيانات أعراض محفوظة');
-        }
+        if (mounted) ThemeHelper.showErrorSnackBar(context, 'لا توجد بيانات أعراض محفوظة');
         return;
       }
 
       final symptomsData = symptomsSnapshot.docs.first.data();
       final mainSymptom = (symptomsData['mainSymptom'] ?? '').toString();
-      final additionalSymptoms = (symptomsData['additionalSymptoms'] as List<dynamic>? ?? [])
-          .map((e) => e.toString())
-          .toList();
-      final symptomText = [
-        mainSymptom,
-        ...additionalSymptoms,
-      ].where((value) => value.trim().isNotEmpty).join('، ');
+      final additionalSymptoms = (symptomsData['additionalSymptoms'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+      final symptomText = [mainSymptom, ...additionalSymptoms].where((value) => value.trim().isNotEmpty).join('، ');
 
-      // بناء نموذج HealthProfile من البيانات
-      final users = _auth.currentUser!;
-      final userData = await _firestore.collection('users').doc(users.uid).get();
-      final data = userData.data() as Map<String, dynamic>;
-
+      final userData = await _firestore.collection('users').doc(user.uid).get();
+      final data = userData.data() ?? <String, dynamic>{};
       final healthProfile = HealthProfile(
-        id: users.uid,
-        patientId: users.uid,
+        id: user.uid,
+        patientId: user.uid,
         age: int.tryParse(data['age']?.toString() ?? '0') ?? 0,
         gender: data['gender'] ?? 'male',
         hasChronicDisease: (data['hasChronicDisease'] ?? false) || additionalSymptoms.isNotEmpty,
@@ -190,15 +235,8 @@ class _HealthAssessmentScreenState extends State<HealthAssessmentScreen>
         updatedAt: DateTime.now(),
       );
 
-      // تحليل البيانات
-      final analysisResult = await AdvancedDiagnosisService.analyzeHealthProfile(
-        healthProfile,
-      );
-
-      // حفظ النتائج
-      await AdvancedDiagnosisService.saveMedicalAnalysis(users.uid, analysisResult);
-
-      // الحصول على الأطباء الموصى بهم
+      final analysisResult = await AdvancedDiagnosisService.analyzeHealthProfile(healthProfile);
+      await AdvancedDiagnosisService.saveMedicalAnalysis(user.uid, analysisResult);
       final doctors = await DoctorMatchingService.findMatchingDoctors(
         recommendedSpecialties: analysisResult.recommendedSpecialties,
         symptoms: analysisResult.matchedSymptoms,
@@ -206,720 +244,399 @@ class _HealthAssessmentScreenState extends State<HealthAssessmentScreen>
 
       setState(() {
         _lastAnalysisResult = analysisResult;
+        _keywordAnalysisResult = null;
         _recommendedDoctors = doctors.isNotEmpty ? doctors : analysisResult.recommendedDoctors;
         _hasCompletedAssessment = true;
       });
 
       if (mounted) {
         ThemeHelper.showSuccessSnackBar(context, '✅ تم التحليل بنجاح');
-        _tabController.animateTo(1); // الذهاب لتبويب النتائج
+        _tabController.animateTo(1);
       }
     } catch (e) {
       print('❌ خطأ في التحليل: $e');
-      if (mounted) {
-        ThemeHelper.showErrorSnackBar(context, 'حدث خطأ في التحليل');
-      }
+      if (mounted) ThemeHelper.showErrorSnackBar(context, 'حدث خطأ في التحليل');
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('تقييم الصحة'),
+        title: const Text('تقييم الصحة الذكي'),
         elevation: 0,
         backgroundColor: MedicalTheme.primaryMedicalBlue,
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
-            Tab(text: 'البداية', icon: Icon(Icons.home)),
-            Tab(text: 'النتائج', icon: Icon(Icons.assessment)),
-            Tab(text: 'الأطباء', icon: Icon(Icons.person_4)),
+            Tab(text: 'الأعراض', icon: Icon(Icons.health_and_safety_rounded)),
+            Tab(text: 'النتائج', icon: Icon(Icons.assessment_rounded)),
+            Tab(text: 'الأطباء', icon: Icon(Icons.person_4_rounded)),
           ],
         ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : TabBarView(
-        controller: _tabController,
-        children: [
-          _buildStartTab(),
-          _buildResultsTab(),
-          _buildDoctorsTab(),
-        ],
-      ),
+              controller: _tabController,
+              children: [_buildStartTab(theme), _buildResultsTab(theme), _buildDoctorsTab(theme)],
+            ),
     );
   }
 
-  /// تبويب البداية
-  Widget _buildStartTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
+  Widget _buildStartTab(ThemeData theme) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          padding: EdgeInsets.all(constraints.maxWidth > 700 ? 24 : 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildHeroCard(theme),
+              const SizedBox(height: 18),
+              _buildKeywordAssessmentCard(theme),
+              const SizedBox(height: 18),
+              _buildLegacyAssessmentActions(),
+              const SizedBox(height: 18),
+              _buildMedicalDisclaimer(theme),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeroCard(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFF1565C0), Color(0xFF42A5F5)]),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: MedicalTheme.primaryMedicalBlue.withOpacity(0.22), blurRadius: 20, offset: const Offset(0, 10))],
+      ),
+      child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // بطاقة الترحيب
-          Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '👋 أهلاً بك!',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'نرحب بك في خدمة تقييم الصحة الذكية. هذه الخدمة تساعدك على:',
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildFeatureItem(
-                    '🤖',
-                    'أسئلة ذكية',
-                    'أجب على أسئلة عن أعراضك وحالتك الصحية',
-                  ),
-                  const SizedBox(height: 12),
-                  _buildFeatureItem(
-                    '🔍',
-                    'تحليل ذكي',
-                    'نحصل على تقييم أولي لحالتك الصحية',
-                  ),
-                  const SizedBox(height: 12),
-                  _buildFeatureItem(
-                    '👨‍⚕️',
-                    'اختيار الطبيب',
-                    'نوصيك بأفضل طبيب متخصص لحالتك',
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // الأزرار الرئيسية
-          if (!_hasCompletedAssessment)
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton.icon(
-                onPressed: _isLoading ? null : _startNewAssessment,
-                icon: const Icon(Icons.quiz, size: 24),
-                label: const Text(
-                  'ابدأ التقييم الآن',
-                  style: TextStyle(fontSize: 16),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: MedicalTheme.primaryMedicalBlue,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            )
-          else
-            Column(
-              children: [
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _analyzeSymptoms,
-                    icon: const Icon(Icons.refresh, size: 24),
-                    label: const Text(
-                      'تحليل جديد',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: MedicalTheme.primaryMedicalBlue,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _startNewAssessment,
-                    icon: const Icon(Icons.quiz, size: 24),
-                    label: const Text(
-                      'إعادة الاختبار',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey[600],
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-          const SizedBox(height: 32),
-
-          // معلومات تحذيرية
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: MedicalTheme.pendingYellow.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: MedicalTheme.pendingYellow,
-              ),
-            ),
-            child: const Row(
-              children: [
-                Icon(
-                  Icons.info,
-                  color: MedicalTheme.pendingYellow,
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'ملاحظة: هذا التقييم استرشادي فقط ولا يغني عن استشارة الطبيب المتخصص',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 34),
+          SizedBox(height: 12),
+          Text('تحليل ذكي للأعراض', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+          SizedBox(height: 8),
+          Text('اختر الأعراض وسيقوم النظام بتحديد العضو المحتمل، التخصص المناسب، وأفضل الأطباء من قاعدة البيانات.', style: TextStyle(color: Colors.white, height: 1.5)),
         ],
       ),
     );
   }
 
-  /// تبويب النتائج
-  Widget _buildResultsTab() {
-    if (!_hasCompletedAssessment || _lastAnalysisResult == null) {
-      return Center(
+  Widget _buildKeywordAssessmentCard(ThemeData theme) {
+    return Card(
+      elevation: 0,
+      color: theme.cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22), side: BorderSide(color: theme.dividerColor.withOpacity(0.12))),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.assessment,
-              size: 64,
-              color: Colors.grey[400],
+            Row(
+              children: [
+                _circleIcon(Icons.psychology_alt_rounded, MedicalTheme.primaryMedicalBlue),
+                const SizedBox(width: 12),
+                const Expanded(child: Text('اختر الأعراض أو منطقة الألم', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: SymptomKeywordAnalysisService.allSymptoms.map((symptom) {
+                final selected = _selectedSymptoms.contains(symptom);
+                return FilterChip(
+                  selected: selected,
+                  label: Text(symptom),
+                  avatar: Icon(selected ? Icons.check_circle : Icons.add_circle_outline, size: 18),
+                  selectedColor: MedicalTheme.primaryMedicalBlue.withOpacity(0.18),
+                  checkmarkColor: MedicalTheme.primaryMedicalBlue,
+                  onSelected: (value) => setState(() {
+                    value ? _selectedSymptoms.add(symptom) : _selectedSymptoms.remove(symptom);
+                  }),
+                );
+              }).toList(),
             ),
             const SizedBox(height: 16),
-            Text(
-              'لا توجد نتائج بعد',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'قم ببدء التقييم لرؤية النتائج',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
+            AnimatedOpacity(
+              duration: const Duration(milliseconds: 250),
+              opacity: _selectedSymptoms.isEmpty ? 0.55 : 1,
+              child: SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: _selectedSymptoms.isEmpty ? null : _analyzeSelectedSymptoms,
+                  icon: const Icon(Icons.travel_explore_rounded),
+                  label: const Text('تحليل الأعراض واقتراح طبيب'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: MedicalTheme.primaryMedicalBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
               ),
             ),
           ],
         ),
-      );
+      ),
+    );
+  }
+
+  Widget _buildLegacyAssessmentActions() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('التقييم التفصيلي السابق', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _isLoading ? null : _startNewAssessment,
+              icon: const Icon(Icons.quiz_rounded),
+              label: Text(_hasCompletedAssessment ? 'إعادة الاختبار التفصيلي' : 'ابدأ التقييم التفصيلي'),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[700], foregroundColor: Colors.white),
+            ),
+            if (_hasCompletedAssessment) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _isLoading ? null : _analyzeSymptoms,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('إعادة تحليل آخر أعراض محفوظة'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResultsTab(ThemeData theme) {
+    if (!_hasCompletedAssessment || (_lastAnalysisResult == null && _keywordAnalysisResult == null)) {
+      return _buildEmptyState(Icons.assessment_outlined, 'لا توجد نتائج بعد', 'اختر أعراضك من التبويب الأول لرؤية التحليل');
     }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // درجة الخطورة
-          Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'تقييم الحالة',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Divider(height: 16),
-                  _buildSeverityBadge(_lastAnalysisResult!.severity),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // التخصصات الموصى بها
-          Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'التخصصات الموصى بها',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Divider(height: 16),
-                  ..._lastAnalysisResult!.recommendedSpecialties.map((specialty) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.star,
-                            color: MedicalTheme.primaryMedicalBlue,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  specialty.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                Text(
-                                  specialty.description,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // الإجراءات الفورية
-          Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'الإجراءات الموصى بها',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Divider(height: 16),
-                  ..._lastAnalysisResult!.immediateActions.map((action) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.check_circle,
-                            color: Colors.green,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              action,
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 32),
+          if (_keywordAnalysisResult != null) _buildKeywordResultCard(theme),
+          if (_lastAnalysisResult != null) ...[
+            _buildSeverityCard(),
+            const SizedBox(height: 16),
+            _buildSpecialtiesCard(_lastAnalysisResult!.recommendedSpecialties),
+            const SizedBox(height: 16),
+            _buildActionsCard(_lastAnalysisResult!.immediateActions),
+          ],
         ],
       ),
     );
   }
 
-  /// تبويب الأطباء
-  Widget _buildDoctorsTab() {
-    if (_recommendedDoctors.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.person_search,
-              size: 64,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'لا توجد توصيات بعد',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'أكمل التقييم لرؤية الأطباء الموصى بهم',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
+  Widget _buildKeywordResultCard(ThemeData theme) {
+    final result = _keywordAnalysisResult!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ..._recommendedDoctors.asMap().entries.map((entry) {
-          final index = entry.key;
-          final doctor = entry.value;
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: _buildDoctorCard(doctor, index + 1),
-          );
-        }).toList(),
-        const SizedBox(height: 32),
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    _circleIcon(result.rule.icon, result.rule.color),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(result.rule.patientMessage, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _infoTile(Icons.biotech_rounded, 'العضو أو المشكلة المحتملة', result.rule.organ),
+                _infoTile(Icons.local_hospital_rounded, 'التخصص المقترح', result.rule.specialties.join(' أو ')),
+                _infoTile(Icons.fact_check_rounded, 'الأعراض المطابقة', result.selectedSymptoms.join('، ')),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildSpecialtiesCard([result.primarySpecialty]),
+        const SizedBox(height: 16),
+        _buildMedicalDisclaimer(theme),
       ],
     );
   }
 
-  /// بطاقة الطبيب
-  Widget _buildDoctorCard(DoctorRecommendation doctor, int rank) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // الترتيب والاسم
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: MedicalTheme.primaryMedicalBlue,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '#$rank',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        doctor.fullName,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        doctor.specialtyName,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 16),
+  Widget _buildDoctorsTab(ThemeData theme) {
+    if (_recommendedDoctors.isEmpty) {
+      return _buildEmptyState(Icons.person_search_rounded, 'لا توجد توصيات بعد', 'أكمل تحليل الأعراض لرؤية الأطباء المناسبين');
+    }
 
-            // التقييم والخبرة
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'التقييم',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(Icons.star, color: Colors.amber, size: 16),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${doctor.rating.toStringAsFixed(1)} / 5',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'الاستشارات',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${doctor.consultationCount} استشارة',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'التطابق',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${doctor.matchPercentage}%',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: MedicalTheme.primaryMedicalBlue,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: _recommendedDoctors.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 14),
+      itemBuilder: (context, index) => _buildDoctorCard(_recommendedDoctors[index], index + 1, theme),
+    );
+  }
 
-            // الحالة (متاح/متصل)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (doctor.isOnline)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
-                      border: Border.all(color: Colors.green),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.circle, color: Colors.green, size: 8),
-                        SizedBox(width: 4),
-                        Text(
-                          'متصل الآن',
-                          style: TextStyle(fontSize: 12, color: Colors.green),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (doctor.isAvailable)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: MedicalTheme.primaryMedicalBlue.withOpacity(0.1),
-                      border: Border.all(color: MedicalTheme.primaryMedicalBlue),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.check_circle, color: MedicalTheme.primaryMedicalBlue, size: 12),
-                        SizedBox(width: 4),
-                        Text(
-                          'متاح للاستشارة',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: MedicalTheme.primaryMedicalBlue,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // أسباب التوصية
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildDoctorCard(DoctorRecommendation doctor, int rank, ThemeData theme) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Duration(milliseconds: 250 + (rank * 80)),
+      builder: (context, value, child) => Opacity(
+        opacity: value,
+        child: Transform.translate(offset: Offset(0, 18 * (1 - value)), child: child),
+      ),
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22), side: BorderSide(color: theme.dividerColor.withOpacity(0.1))),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
                 children: [
-                  const Text(
-                    'أسباب التوصية:',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey,
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundColor: MedicalTheme.primaryMedicalBlue.withOpacity(0.12),
+                    backgroundImage: doctor.photoURL != null && doctor.photoURL!.isNotEmpty ? NetworkImage(doctor.photoURL!) : null,
+                    child: doctor.photoURL == null || doctor.photoURL!.isEmpty ? const Icon(Icons.person_rounded, size: 32) : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(doctor.fullName, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Text(doctor.specialtyName.isNotEmpty ? doctor.specialtyName : doctor.specialty, style: TextStyle(color: theme.hintColor)),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  ...doctor.reasonsForRecommendation.map((reason) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Text(
-                        '• $reason',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    );
-                  }).toList(),
+                  Chip(label: Text('#$rank'), backgroundColor: MedicalTheme.primaryMedicalBlue.withOpacity(0.12)),
                 ],
               ),
-            ),
-            const SizedBox(height: 16),
-
-            // زر الاستشارة
-            SizedBox(
-              width: double.infinity,
-              height: 44,
-              child: ElevatedButton(
-                onPressed: () {
-                  ThemeHelper.showSuccessSnackBar(
-                    context,
-                    'سيتم تطوير ميزة الاستشارة المباشرة قريباً',
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: MedicalTheme.primaryMedicalBlue,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('استشارة الآن'),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(child: _metric(Icons.star_rounded, '${doctor.rating.toStringAsFixed(1)}', 'التقييم', Colors.amber)),
+                  Expanded(child: _metric(Icons.work_history_rounded, '${doctor.yearsOfExperience}', 'سنوات الخبرة', Colors.teal)),
+                  Expanded(child: _metric(Icons.verified_rounded, '${doctor.matchPercentage}%', 'التطابق', MedicalTheme.primaryMedicalBlue)),
+                ],
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// بناء شارة درجة الخطورة
-  Widget _buildSeverityBadge(String severity) {
-    final (color, icon, label) = switch (severity) {
-      'high' => (
-      MedicalTheme.dangerRed,
-      Icons.warning,
-      'حالة خطيرة - يُنصح بزيارة فورية'
-      ),
-      'medium' => (
-      MedicalTheme.pendingYellow,
-      Icons.info,
-      'حالة متوسطة - يُنصح بزيارة خلال أيام'
-      ),
-      _ => (
-      Colors.green,
-      Icons.check_circle,
-      'حالة طبيعية - المراقبة والعناية المنزلية'
-      ),
-    };
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        border: Border.all(color: color),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.bold,
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: doctor.reasonsForRecommendation.map((reason) => Chip(label: Text(reason), visualDensity: VisualDensity.compact)).toList(),
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// بناء عنصر ميزة
-  Widget _buildFeatureItem(String emoji, String title, String description) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(emoji, style: const TextStyle(fontSize: 24)),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-              Text(
-                description,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
+              const SizedBox(height: 14),
+              ElevatedButton.icon(
+                onPressed: () => ThemeHelper.showSuccessSnackBar(context, 'سيتم فتح الحجز أو الاستشارة لهذا الطبيب'),
+                icon: const Icon(Icons.calendar_month_rounded),
+                label: const Text('حجز أو بدء استشارة'),
+                style: ElevatedButton.styleFrom(backgroundColor: MedicalTheme.primaryMedicalBlue, foregroundColor: Colors.white),
               ),
             ],
           ),
         ),
-      ],
+      ),
     );
   }
+
+  Widget _buildSeverityCard() => Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: Padding(padding: const EdgeInsets.all(16), child: _buildSeverityBadge(_lastAnalysisResult!.severity)),
+      );
+
+  Widget _buildSpecialtiesCard(List<SpecialtyRecommendation> specialties) => Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('التخصصات الموصى بها', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              ...specialties.map((s) => _infoTile(Icons.star_rounded, s.name, s.description)),
+            ],
+          ),
+        ),
+      );
+
+  Widget _buildActionsCard(List<String> actions) => Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('الإجراءات الموصى بها', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              ...actions.map((a) => _infoTile(Icons.check_circle_rounded, 'إجراء', a)),
+            ],
+          ),
+        ),
+      );
+
+  Widget _buildSeverityBadge(String severity) {
+    final (color, icon, label) = switch (severity) {
+      'high' => (MedicalTheme.dangerRed, Icons.warning_rounded, 'حالة خطيرة - يُنصح بزيارة فورية'),
+      'medium' => (MedicalTheme.pendingYellow, Icons.info_rounded, 'حالة متوسطة - يُنصح بزيارة خلال أيام'),
+      _ => (Colors.green, Icons.check_circle_rounded, 'حالة بسيطة - المراقبة والعناية المنزلية'),
+    };
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), border: Border.all(color: color), borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [Icon(icon, color: color), const SizedBox(width: 12), Expanded(child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold)))]),
+    );
+  }
+
+  Widget _buildMedicalDisclaimer(ThemeData theme) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: MedicalTheme.pendingYellow.withOpacity(0.1), borderRadius: BorderRadius.circular(14), border: Border.all(color: MedicalTheme.pendingYellow.withOpacity(0.6))),
+        child: const Row(children: [Icon(Icons.info_rounded, color: MedicalTheme.pendingYellow), SizedBox(width: 12), Expanded(child: Text('ملاحظة: هذا التقييم استرشادي فقط ولا يغني عن استشارة الطبيب المتخصص', style: TextStyle(fontSize: 12)))]),
+      );
+
+  Widget _emptyIcon(IconData icon) => Icon(icon, size: 68, color: Colors.grey[400]);
+
+  Widget _buildEmptyState(IconData icon, String title, String subtitle) => Center(
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [_emptyIcon(icon), const SizedBox(height: 16), Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 8), Text(subtitle, style: TextStyle(color: Colors.grey[600]))]),
+      );
+
+  Widget _circleIcon(IconData icon, Color color) => Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
+        child: Icon(icon, color: color),
+      );
+
+  Widget _infoTile(IconData icon, String title, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(icon, size: 20, color: MedicalTheme.primaryMedicalBlue), const SizedBox(width: 10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.bold)), const SizedBox(height: 2), Text(value)]))]),
+      );
+
+  Widget _metric(IconData icon, String value, String label, Color color) => Container(
+        margin: const EdgeInsets.symmetric(horizontal: 3),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(14)),
+        child: Column(children: [Icon(icon, color: color, size: 20), const SizedBox(height: 4), Text(value, style: const TextStyle(fontWeight: FontWeight.bold)), Text(label, style: const TextStyle(fontSize: 11), textAlign: TextAlign.center)]),
+      );
 }
