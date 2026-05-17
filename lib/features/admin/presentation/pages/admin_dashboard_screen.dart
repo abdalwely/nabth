@@ -2,6 +2,7 @@ import 'package:digl/features/admin/models/admin_models.dart';
 import 'package:digl/features/admin/presentation/pages/admin_login_screen.dart';
 import 'package:digl/features/admin/presentation/pages/doctor_requests_screen.dart';
 import 'package:digl/features/admin/services/admin_service.dart';
+import 'package:digl/features/admin/services/admin_report_service.dart';
 import 'package:flutter/material.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -162,7 +163,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 const SizedBox(height: 18),
                 _buildPendingRequestsCard(stats, theme),
                 const SizedBox(height: 18),
-                _buildQuickActionsCard(theme),
+                _buildInsightsSection(stats, theme),
+                const SizedBox(height: 18),
+                _buildQuickActionsCard(theme, stats),
               ],
             ),
           ),
@@ -373,11 +376,169 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Widget _buildQuickActionsCard(ThemeData theme) {
+
+  Widget _buildInsightsSection(AdminStats stats, ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildReportsCard(stats, theme),
+        const SizedBox(height: 14),
+        _buildModernCharts(stats, theme),
+      ],
+    );
+  }
+
+  Widget _buildReportsCard(AdminStats stats, ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 16, offset: const Offset(0, 8))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: const Color(0xFF7B61FF).withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFF7B61FF)),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(child: Text('تقارير PDF احترافية', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold))),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text('يشمل التقرير المرضى، الأطباء، الاستشارات، الحجوزات، التقييمات الصحية، وأكثر التخصصات والأطباء استخداماً.'),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: () => _printReport(stats),
+            icon: const Icon(Icons.print_rounded),
+            label: const Text('تحميل أو طباعة التقرير'),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7B61FF), foregroundColor: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernCharts(AdminStats stats, ThemeData theme) {
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('رسوم بيانية مباشرة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 14),
+            _buildHorizontalBars('أكثر التخصصات طلباً', stats.topSpecialties, const Color(0xFF3A86FF)),
+            const SizedBox(height: 18),
+            _buildHorizontalBars('أكثر الأطباء حجزاً', stats.topDoctors, const Color(0xFF2CB67D)),
+            const SizedBox(height: 18),
+            _buildMiniPie(stats),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHorizontalBars(String title, Map<String, int> values, Color color) {
+    final maxValue = values.values.fold<int>(0, (max, value) => value > max ? value : max);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        if (values.isEmpty)
+          Text('لا توجد بيانات كافية حالياً', style: TextStyle(color: Colors.grey[600]))
+        else
+          ...values.entries.map((entry) {
+            final factor = maxValue == 0 ? 0.0 : entry.value / maxValue;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                children: [
+                  SizedBox(width: 92, child: Text(entry.key, overflow: TextOverflow.ellipsis)),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: LinearProgressIndicator(
+                        minHeight: 10,
+                        value: factor,
+                        backgroundColor: color.withOpacity(0.1),
+                        valueColor: AlwaysStoppedAnimation<Color>(color),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(entry.value.toString(), style: const TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _buildMiniPie(AdminStats stats) {
+    final total = (stats.totalPatients + stats.totalDoctors + stats.totalConsultations + stats.totalAppointments).clamp(1, 1 << 31);
+    final patient = stats.totalPatients / total;
+    final doctor = stats.totalDoctors / total;
+    final consultations = stats.totalConsultations / total;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Pie Chart لتوزيع النشاط', style: TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            SizedBox(
+              width: 90,
+              height: 90,
+              child: CircularProgressIndicator(
+                strokeWidth: 13,
+                value: patient,
+                backgroundColor: const Color(0xFF2CB67D).withOpacity(doctor + consultations),
+                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF3A86FF)),
+              ),
+            ),
+            const SizedBox(width: 18),
+            Expanded(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _legend('المرضى', const Color(0xFF3A86FF), stats.totalPatients),
+                  _legend('الأطباء', const Color(0xFF2CB67D), stats.totalDoctors),
+                  _legend('الاستشارات', const Color(0xFFFFA62B), stats.totalConsultations),
+                  _legend('الحجوزات', const Color(0xFF7B61FF), stats.totalAppointments),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _legend(String label, Color color, int value) {
+    return Chip(
+      avatar: CircleAvatar(backgroundColor: color, radius: 5),
+      label: Text('$label: $value'),
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
+  Widget _buildQuickActionsCard(ThemeData theme, AdminStats stats) {
     final actions = [
       {'icon': Icons.assignment_rounded, 'label': 'الطلبات', 'color': const Color(0xFF3A86FF), 'tap': () => setState(() => _currentIndex = 1)},
       {'icon': Icons.person_add_alt_1_rounded, 'label': 'إضافة مسؤول', 'color': const Color(0xFF2CB67D), 'tap': _showComingSoon},
-      {'icon': Icons.analytics_rounded, 'label': 'التقارير', 'color': const Color(0xFF7B61FF), 'tap': _showComingSoon},
+      {'icon': Icons.picture_as_pdf_rounded, 'label': 'PDF', 'color': const Color(0xFF7B61FF), 'tap': () => _printReport(stats)},
     ];
 
     return Card(
@@ -498,6 +659,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _printReport(AdminStats stats) async {
+    await AdminReportService.printDashboardReport(admin: widget.admin, stats: stats);
   }
 
   void _showComingSoon() {

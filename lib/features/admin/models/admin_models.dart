@@ -221,6 +221,9 @@ class AdminStats {
   final int totalAppointments;
   final double averageDoctorRating;
   final int totalConsultations;
+  final int totalHealthAssessments;
+  final Map<String, int> topSpecialties;
+  final Map<String, int> topDoctors;
 
   AdminStats({
     required this.totalDoctors,
@@ -231,6 +234,9 @@ class AdminStats {
     required this.totalAppointments,
     required this.averageDoctorRating,
     required this.totalConsultations,
+    this.totalHealthAssessments = 0,
+    this.topSpecialties = const {},
+    this.topDoctors = const {},
   });
 
   factory AdminStats.fromFirestore(DocumentSnapshot doc) {
@@ -244,6 +250,9 @@ class AdminStats {
       totalAppointments: data['totalAppointments'] ?? 0,
       averageDoctorRating: (data['averageDoctorRating'] ?? 0).toDouble(),
       totalConsultations: data['totalConsultations'] ?? 0,
+      totalHealthAssessments: data['totalHealthAssessments'] ?? 0,
+      topSpecialties: Map<String, int>.from(data['topSpecialties'] ?? const {}),
+      topDoctors: Map<String, int>.from(data['topDoctors'] ?? const {}),
     );
   }
 }
